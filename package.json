@@ -1,0 +1,13 @@
+{
+  "name": "discord-antilink-bot",
+  "version": "1.0.0",
+  "description": "Discord bot Anti-Link dengan whitelist role, dihost di Render 24/7",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.3",
+    "express": "^4.19.2"
+  }
+}
