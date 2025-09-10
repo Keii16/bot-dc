@@ -1,48 +1,91 @@
-const { Client, GatewayIntentBits, PermissionsBitField } = require("discord.js");
-const express = require("express");
+require('dotenv').config();
+const { Client, GatewayIntentBits, PermissionsBitField } = require('discord.js');
+const express = require('express'); // Untuk UptimeRobot
 
-// Express web server biar Render deteksi bot "hidup"
-const app = express();
-app.get("/", (req, res) => res.send("Bot is running!"));
-app.listen(3000, () => console.log("🌐 Web server running on port 3000"));
-
-// Buat client bot Discord
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ],
+    intents: [
+        GatewayIntentBits.Guilds, 
+        GatewayIntentBits.GuildMessages, 
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMembers
+    ]
 });
 
-client.on("ready", () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
+// ---------------------------
+// Konfigurasi
+// ---------------------------
+const logChannelId = process.env.LOG_CHANNEL_ID;
+const whitelistChannels = process.env.WHITELIST_CHANNELS ? process.env.WHITELIST_CHANNELS.split(',') : [];
+const muteRoleId = process.env.MUTE_ROLE_ID;
+const muteDuration = process.env.MUTE_DURATION ? parseInt(process.env.MUTE_DURATION) : 600000;
+
+// ---------------------------
+// Event: Bot siap
+// ---------------------------
+client.once('ready', () => {
+    console.log(`${client.user.tag} online!`);
 });
 
-// Role yang boleh kirim link
-const ALLOWED_ROLES = ["1317800016663941223", "1318101701441491025"]; // ubah sesuai nama role di server kamu
+// ---------------------------
+// Event: Anti-Link
+// ---------------------------
+client.on('messageCreate', async message => {
+    if (message.author.bot) return; // Skip bot
+    if (whitelistChannels.includes(message.channel.id)) return; // Skip channel whitelist
 
-// Fitur Anti-Link + Whitelist
-client.on("messageCreate", async (msg) => {
-  if (msg.author.bot) return; // abaikan pesan dari bot
+    const linkRegex = /(https?:\/\/[^\s]+)/g;
+    if (linkRegex.test(message.content)) {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            try {
+                // Hapus pesan
+                await message.delete();
 
-  const linkRegex = /(https?:\/\/|www\.)\S+/gi;
+                // Kirim peringatan sementara
+                await message.channel.send(`${message.author}, link tidak diperbolehkan!`).then(msg => {
+                    setTimeout(() => msg.delete(), 5000);
+                });
 
-  if (linkRegex.test(msg.content)) {
-    // cek kalau user punya role whitelist
-    const memberRoles = msg.member.roles.cache.map(r => r.name);
-    const hasAllowedRole = memberRoles.some(role => ALLOWED_ROLES.includes(role));
+                // ---------------------------
+                // Log ke channel
+                // ---------------------------
+                const logChannel = await client.channels.fetch(logChannelId);
+                if (logChannel) {
+                    logChannel.send(`Link dihapus dari ${message.author.tag} (${message.author.id}) di ${message.channel}: \n${message.content}`);
+                }
 
-    if (hasAllowedRole) return; // biarkan kalau punya role whitelist
+                // ---------------------------
+                // Tambah role mute sementara
+                // ---------------------------
+                if (muteRoleId && message.member.manageable) {
+                    const muteRole = message.guild.roles.cache.get(muteRoleId);
+                    if (muteRole) {
+                        await message.member.roles.add(muteRole);
+                        setTimeout(() => {
+                            message.member.roles.remove(muteRole).catch(console.log);
+                        }, muteDuration);
+                    }
+                }
 
-    // cek kalau bot punya izin hapus pesan
-    if (msg.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
-      await msg.delete().catch(() => {});
-      msg.channel.send(`${msg.author}, dilarang mengirim link di sini! 🚫`);
-    } else {
-      console.log("⚠️ Bot tidak punya izin Manage Messages.");
+            } catch (err) {
+                console.log('Error: ', err);
+            }
+        }
     }
-  }
 });
 
-client.login(process.env.TOKEN); // Token dari Render Environment Variable
+// ---------------------------
+// Web Server untuk UptimeRobot
+// ---------------------------
+const app = express();
+app.get('/', (req, res) => {
+    res.send('Bot is online!');
+});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Web server running on port ${PORT}`);
+});
+
+// ---------------------------
+// Login bot
+// ---------------------------
+client.login(process.env.DISCORD_TOKEN);
